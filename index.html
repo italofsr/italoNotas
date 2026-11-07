@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14532d">
+  <meta name="description" content="Leitor de cupons fiscais NFC-e e controle de gastos pessoais.">
+  <title>Minhas notinhas</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --green: #166534;
+      --green-dark: #14532d;
+      --green-soft: #dcfce7;
+      --ink: #17231b;
+      --muted: #66736a;
+      --line: #dce5de;
+      --paper: #ffffff;
+      --page: #f3f7f3;
+      --danger: #b42318;
+      --danger-bg: #fef3f2;
+      --warning: #854d0e;
+      --warning-bg: #fefce8;
+      --success: #166534;
+      --success-bg: #f0fdf4;
+      --radius: 18px;
+      --shadow: 0 8px 28px rgba(20, 50, 29, .07);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-height: 100%; background: var(--page); }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 0 0 calc(28px + env(safe-area-inset-bottom));
+      color: var(--ink);
+      background: var(--page);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 17px;
+      line-height: 1.45;
+    }
+
+    button, input, select { font: inherit; }
+
+    button {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .58;
+    }
+
+    .topbar {
+      color: #fff;
+      background: var(--green-dark);
+      padding: max(22px, env(safe-area-inset-top)) 18px 22px;
+    }
+
+    .topbar-inner, main {
+      width: min(100% - 28px, 620px);
+      margin-inline: auto;
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      flex: 0 0 44px;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      color: var(--green-dark);
+      background: #fff;
+      font-size: 25px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(21px, 5vw, 25px);
+      line-height: 1.15;
+      letter-spacing: -.4px;
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      color: #d1e7d6;
+      font-size: 13px;
+    }
+
+    .small-button {
+      min-height: 38px;
+      padding: 7px 11px;
+      border: 1px solid rgba(255,255,255,.45);
+      border-radius: 10px;
+      color: #fff;
+      background: transparent;
+      font-size: 13px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    main { padding-top: 20px; }
+
+    .panel {
+      margin-bottom: 16px;
+      padding: 19px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .section-title {
+      margin: 0 0 7px;
+      font-size: 19px;
+      font-weight: 750;
+      letter-spacing: -.2px;
+    }
+
+    .help-text {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .primary-button {
+      display: flex;
+      width: 100%;
+      min-height: 64px;
+      align-items: center;
+      justify-content: center;
+      gap: 11px;
+      margin-top: 17px;
+      padding: 15px 18px;
+      border: 0;
+      border-radius: 16px;
+      color: #fff;
+      background: var(--green);
+      box-shadow: 0 5px 13px rgba(22, 101, 52, .18);
+      font-size: 20px;
+      font-weight: 750;
+    }
+
+    .primary-button:active { transform: translateY(1px); }
+
+    .button-icon { font-size: 25px; line-height: 1; }
+
+    .divider-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 19px 0 14px;
+      color: #849087;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+    }
+
+    .divider-label::before, .divider-label::after {
+      height: 1px;
+      flex: 1;
+      background: var(--line);
+      content: "";
+    }
+
+    label.field-label {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .text-input, .select-input {
+      display: block;
+      width: 100%;
+      min-height: 54px;
+      padding: 12px 14px;
+      border: 1px solid #cbd7ce;
+      border-radius: 12px;
+      outline: none;
+      color: var(--ink);
+      background: #fff;
+      font-size: 16px;
+    }
+
+    .text-input:focus, .select-input:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(22,101,52,.12);
+    }
+
+    .secondary-button {
+      width: 100%;
+      min-height: 54px;
+      margin-top: 10px;
+      padding: 12px 16px;
+      border: 1px solid #b7c9bb;
+      border-radius: 12px;
+      color: var(--green-dark);
+      background: #f8fcf8;
+      font-size: 17px;
+      font-weight: 750;
+    }
+
+    .reader-panel {
+      margin-top: 16px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #101a13;
+      color: #fff;
+    }
+
+    .reader-heading {
+      margin: 0 0 12px;
+      text-align: center;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .reader-frame {
+      display: grid;
+      width: min(100%, 390px);
+      aspect-ratio: 1 / 1;
+      margin: 0 auto;
+      overflow: hidden;
+      place-items: center;
+      border: 2px solid rgba(255,255,255,.3);
+      border-radius: 15px;
+      background: #050805;
+    }
+
+    #reader {
+      width: 100%;
+      height: 100%;
+    }
+
+    #reader video {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+    }
+
+    #reader__dashboard_section_csr,
+    #reader__dashboard_section_swaplink,
+    #reader__status_span {
+      display: none !important;
+    }
+
+    .reader-note {
+      margin: 12px 0 0;
+      color: #d4ded6;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .stop-button {
+      display: block;
+      width: 100%;
+      min-height: 48px;
+      margin-top: 13px;
+      border: 1px solid rgba(255,255,255,.35);
+      border-radius: 12px;
+      color: #fff;
+      background: rgba(255,255,255,.1);
+      font-weight: 700;
+    }
+
+    .status {
+      display: none;
+      margin: 0 0 16px;
+      padding: 14px 15px;
+      border: 1px solid transparent;
+      border-radius: 13px;
+      font-size: 15px;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+
+    .status.visible { display: block; }
+    .status.info { color: #174a75; border-color: #bfdbfe; background: #eff6ff; }
+    .status.success { color: var(--success); border-color: #bbf7d0; background: var(--success-bg); }
+    .status.warning { color: var(--warning); border-color: #fde68a; background: var(--warning-bg); }
+    .status.error { color: var(--danger); border-color: #fecaca; background: var(--danger-bg); }
+
+    .result-card { display: none; }
+    .result-card.visible { display: block; }
+
+    .result-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .store-name {
+      margin: 0;
+      font-size: 21px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    .purchase-date {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .total-block { text-align: right; white-space: nowrap; }
+    .total-caption { color: var(--muted); font-size: 12px; }
+    .total-value { display: block; color: var(--green-dark); font-size: 23px; font-weight: 800; }
+
+    .category-row {
+      display: grid;
+      grid-template-columns: 1fr minmax(145px, 48%);
+      align-items: center;
+      gap: 12px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .category-label { font-size: 14px; font-weight: 700; }
+    .category-row .select-input { min-height: 46px; padding-block: 8px; }
+
+    .items-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin: 17px 0 8px;
+    }
+
+    .items-heading h3 { margin: 0; font-size: 18px; }
+    .item-count { color: var(--muted); font-size: 13px; }
+
+    .item-list { display: grid; gap: 9px; }
+
+    .item-row {
+      padding: 13px;
+      border: 1px solid #e5ece6;
+      border-radius: 13px;
+      background: #fbfdfb;
+    }
+
+    .item-main {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .item-description {
+      min-width: 0;
+      font-size: 15px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .item-total {
+      flex: 0 0 auto;
+      font-size: 15px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .item-detail {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .empty-items {
+      padding: 15px;
+      border-radius: 12px;
+      color: var(--muted);
+      background: #f5f7f5;
+      font-size: 14px;
+    }
+
+    .loading-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-right: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse 1s infinite ease-in-out;
+    }
+
+    @keyframes pulse { 50% { opacity: .25; } }
+
+    .footer-note {
+      margin: 18px 8px 0;
+      color: #77847a;
+      text-align: center;
+      font-size: 12px;
+    }
+
+    .password-overlay {
+      position: fixed;
+      z-index: 1000;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(8, 20, 12, .72);
+    }
+
+    .password-overlay[hidden] { display: none; }
+
+    .password-box {
+      width: min(100%, 430px);
+      padding: 23px;
+      border-radius: 20px;
+      background: #fff;
+      box-shadow: 0 20px 60px rgba(0,0,0,.25);
+    }
+
+    .password-box h2 { margin: 0 0 7px; font-size: 22px; }
+    .password-box p { margin: 0 0 17px; color: var(--muted); font-size: 14px; }
+    .password-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
+    .password-actions button { min-height: 49px; border-radius: 11px; font-weight: 750; }
+    .password-save { border: 0; color: #fff; background: var(--green); }
+    .password-cancel { border: 1px solid var(--line); color: var(--ink); background: #fff; }
+    .password-error { min-height: 20px; margin: 9px 0 0 !important; color: var(--danger) !important; }
+
+    @media (max-width: 390px) {
+      .topbar-inner, main { width: min(100% - 22px, 620px); }
+      .topbar { padding-inline: 12px; }
+      .panel { padding: 16px; }
+      .brand-mark { flex-basis: 40px; width: 40px; height: 40px; }
+      .small-button { padding-inline: 8px; }
+      .result-top { flex-direction: column; }
+      .total-block { text-align: left; }
+      .category-row { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">🧾</div>
+        <div>
+          <h1>Minhas notinhas</h1>
+          <p class="subtitle">Leitor e controle de compras</p>
+        </div>
+      </div>
+      <button id="changePasswordButton" class="small-button" type="button">Trocar senha</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="scanTitle">
+      <h2 id="scanTitle" class="section-title">Adicionar uma compra</h2>
+      <p class="help-text">Aponte a câmera para o QR Code do cupom fiscal. A notinha será consultada e lançada na sua planilha.</p>
+
+      <button id="readButton" class="primary-button" type="button">
+        <span class="button-icon" aria-hidden="true">▦</span>
+        <span>Ler notinha</span>
+      </button>
+
+      <section id="readerPanel" class="reader-panel" hidden aria-label="Leitor de QR Code">
+        <p class="reader-heading">Enquadre o QR Code dentro da área</p>
+        <div class="reader-frame">
+          <div id="reader"></div>
+        </div>
+        <p class="reader-note">A câmera será desligada assim que o código for lido.</p>
+        <button id="stopCameraButton" class="stop-button" type="button">Fechar câmera</button>
+      </section>
+
+      <div class="divider-label">Ou use o link</div>
+      <label class="field-label" for="invoiceLink">Ou cole o link da nota</label>
+      <input
+        id="invoiceLink"
+        class="text-input"
+        type="url"
+        inputmode="url"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        placeholder="https://nfce.sefaz.pe.gov.br/..."
+      >
+      <button id="launchButton" class="secondary-button" type="button">Lançar</button>
+    </section>
+
+    <div id="statusMessage" class="status" role="status" aria-live="polite"></div>
+
+    <section id="resultCard" class="panel result-card" aria-labelledby="storeName">
+      <div class="result-top">
+        <div>
+          <h2 id="storeName" class="store-name">Loja</h2>
+          <p id="purchaseDate" class="purchase-date"></p>
+        </div>
+        <div class="total-block">
+          <span class="total-caption">Total da compra</span>
+          <strong id="purchaseTotal" class="total-value">R$ 0,00</strong>
+        </div>
+      </div>
+
+      <div class="category-row">
+        <label class="category-label" for="categorySelect">Categoria da loja</label>
+        <select id="categorySelect" class="select-input">
+          <option value="Mercado">Mercado</option>
+          <option value="Farmácia">Farmácia</option>
+          <option value="Combustível">Combustível</option>
+          <option value="Restaurante">Restaurante</option>
+          <option value="Outros">Outros</option>
+        </select>
+      </div>
+
+      <div class="items-heading">
+        <h3>Produtos da nota</h3>
+        <span id="itemCount" class="item-count"></span>
+      </div>
+      <div id="itemList" class="item-list"></div>
+    </section>
+
+    <p class="footer-note">Os lançamentos são enviados para sua planilha Google.</p>
+  </main>
+
+  <div id="passwordOverlay" class="password-overlay" hidden>
+    <form id="passwordForm" class="password-box">
+      <h2 id="passwordTitle">Acesso ao seu controle</h2>
+      <p id="passwordDescription">Informe a senha configurada no Apps Script. Ela ficará salva somente neste navegador.</p>
+      <label class="field-label" for="passwordInput">Senha</label>
+      <input id="passwordInput" class="text-input" type="password" autocomplete="current-password" required>
+      <p id="passwordError" class="password-error" aria-live="polite"></p>
+      <div class="password-actions">
+        <button id="cancelPasswordButton" class="password-cancel" type="button" hidden>Cancelar</button>
+        <button class="password-save" type="submit">Salvar senha</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Biblioteca gratuita de leitura de QR Code, fixada na versão 2.3.8. -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <script>
+    // ==========================================================
+    // CONFIGURAÇÃO: COLE AQUI A URL DO APLICATIVO DA WEB DO GAS
+    // Exemplo: https://script.google.com/macros/s/SEU_ID/exec
+    // ==========================================================
+    const URL_DO_MOTOR = "COLE_AQUI_A_URL_DO_SEU_APPS_SCRIPT";
+
+    const CHAVE_SENHA_LOCAL = "minhas_notinhas_senha_v1";
+    const CATEGORIAS = ["Mercado", "Farmácia", "Combustível", "Restaurante", "Outros"];
+
+    const elementos = {
+      changePasswordButton: document.getElementById("changePasswordButton"),
+      readButton: document.getElementById("readButton"),
+      launchButton: document.getElementById("launchButton"),
+      stopCameraButton: document.getElementById("stopCameraButton"),
+      readerPanel: document.getElementById("readerPanel"),
+      invoiceLink: document.getElementById("invoiceLink"),
+      status: document.getElementById("statusMessage"),
+      resultCard: document.getElementById("resultCard"),
+      storeName: document.getElementById("storeName"),
+      purchaseDate: document.getElementById("purchaseDate"),
+      purchaseTotal: document.getElementById("purchaseTotal"),
+      categorySelect: document.getElementById("categorySelect"),
+      itemCount: document.getElementById("itemCount"),
+      itemList: document.getElementById("itemList"),
+      passwordOverlay: document.getElementById("passwordOverlay"),
+      passwordForm: document.getElementById("passwordForm"),
+      passwordInput: document.getElementById("passwordInput"),
+      passwordError: document.getElementById("passwordError"),
+      passwordTitle: document.getElementById("passwordTitle"),
+      passwordDescription: document.getElementById("passwordDescription"),
+      cancelPasswordButton: document.getElementById("cancelPasswordButton")
+    };
+
+    let senhaAtual = "";
+    let leitorQr = null;
+    let cameraLigada = false;
+    let leituraEmProcessamento = false;
+    let lojaAtual = "";
+    let categoriaAtual = "Outros";
+    let enviando = false;
+    let modoTrocaSenha = false;
+
+    // ----------------------------------------------------------
+    // SENHA: primeira utilização e troca posterior
+    // ----------------------------------------------------------
+    function carregarSenhaSalva() {
+      try {
+        return localStorage.getItem(CHAVE_SENHA_LOCAL) || "";
+      } catch (erro) {
+        mostrarStatus("Este navegador bloqueou o armazenamento local. Permita o uso de armazenamento para salvar a senha neste aparelho.", "error");
+        return "";
+      }
+    }
+
+    function abrirTelaSenha(troca) {
+      modoTrocaSenha = Boolean(troca);
+      elementos.passwordTitle.textContent = modoTroca ? "Trocar senha" : "Acesso ao seu controle";
+      elementos.passwordDescription.textContent = modoTroca
+        ? "Digite a nova senha cadastrada na função configurarSenha() do Apps Script."
+        : "Informe a senha configurada no Apps Script. Ela ficará salva somente neste navegador.";
+      elementos.passwordInput.value = "";
+      elementos.passwordError.textContent = "";
+      elementos.cancelPasswordButton.hidden = !modoTroca;
+      elementos.passwordOverlay.hidden = false;
+      window.setTimeout(() => elementos.passwordInput.focus(), 80);
+    }
+
+    function fecharTelaSenha() {
+      elementos.passwordOverlay.hidden = true;
+    }
+
+    elementos.passwordForm.addEventListener("submit", function(evento) {
+      evento.preventDefault();
+      const novaSenha = elementos.passwordInput.value;
+      if (!novaSenha.trim()) {
+        elementos.passwordError.textContent = "Digite a senha para continuar.";
+        return;
+      }
+
+      try {
+        localStorage.setItem(CHAVE_SENHA_LOCAL, novaSenha);
+        senhaAtual = novaSenha;
+        fecharTelaSenha();
+        mostrarStatus("Senha salva neste aparelho.", "success");
+      } catch (erro) {
+        elementos.passwordError.textContent = "Não foi possível salvar a senha neste navegador.";
+      }
+    });
+
+    elementos.cancelPasswordButton.addEventListener("click", function() {
+      fecharTelaSenha();
+    });
+
+    elementos.changePasswordButton.addEventListener("click", function() {
+      abrirTelaSenha(true);
+    });
+
+    // ----------------------------------------------------------
+    // MENSAGENS E FORMATAÇÃO
+    // ----------------------------------------------------------
+    function mostrarStatus(mensagem, tipo) {
+      elementos.status.textContent = mensagem;
+      elementos.status.className = "status visible " + (tipo || "info");
+    }
+
+    function limparStatus() {
+      elementos.status.textContent = "";
+      elementos.status.className = "status";
+    }
+
+    function setCarregando(ativo, texto) {
+      enviando = ativo;
+      elementos.readButton.disabled = ativo || !senhaAtual;
+      elementos.launchButton.disabled = ativo || !senhaAtual;
+      elementos.invoiceLink.disabled = ativo;
+      elementos.changePasswordButton.disabled = ativo;
+      if (ativo) {
+        mostrarStatus(texto || "Buscando a nota...", "info");
+      }
+    }
+
+    function formatarMoeda(valor) {
+      const numero = Number(valor);
+      if (!Number.isFinite(numero)) return "—";
+      return new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: "BRL"
+      }).format(numero);
+    }
+
+    function formatarQuantidade(valor) {
+      const numero = Number(valor);
+      if (!Number.isFinite(numero)) return String(valor ?? "");
+      return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(numero);
+    }
+
+    function validarLinkNota(linkInformado) {
+      const link = String(linkInformado || "").trim();
+      if (!link) throw new Error("Cole o link da nota ou leia o QR Code.");
+
+      let url;
+      try {
+        url = new URL(link);
+      } catch (erro) {
+        throw new Error("O link informado não é válido. Confira se você copiou o endereço completo do QR Code.");
+      }
+
+      if (url.protocol !== "https:") {
+        throw new Error("O link da NFC-e precisa começar com https://.");
+      }
+
+      if (url.hostname.toLowerCase() !== "nfce.sefaz.pe.gov.br" || !url.pathname.includes("/nfce-web/consultarNFCe")) {
+        throw new Error("Este não parece ser um link de consulta NFC-e da SEFAZ de Pernambuco.");
+      }
+
+      const parametro = url.searchParams.get("p") || "";
+      const chave = parametro.match(/^(\d{44})(?:\||$)/);
+      if (!chave) {
+        throw new Error("Não encontrei a chave de acesso de 44 números no link. Leia novamente o QR Code ou copie o link completo.");
+      }
+
+      return link;
+    }
+
+    // ----------------------------------------------------------
+    // CHAMADA AO GOOGLE APPS SCRIPT
+    // ----------------------------------------------------------
+    async function chamarMotor(dados) {
+      if (!URL_DO_MOTOR || URL_DO_MOTOR.includes("COLE_AQUI")) {
+        throw new Error("Configure a constante URL_DO_MOTOR no início do JavaScript com o endereço /exec do seu Apps Script.");
+      }
+
+      let resposta;
+      try {
+        resposta = await fetch(URL_DO_MOTOR, {
+          method: "POST",
+          redirect: "follow",
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+          },
+          body: JSON.stringify(dados)
+        });
+      } catch (erro) {
+        throw new Error("Não consegui conversar com o Apps Script. Confira a URL do motor, a implantação como Aplicativo da Web e a conexão. Se aparecer um erro de CORS, será necessário ajustar a integração do endpoint.");
+      }
+
+      const textoResposta = await resposta.text();
+      let resultado;
+      try {
+        resultado = JSON.parse(textoResposta);
+      } catch (erro) {
+        throw new Error("O Apps Script não devolveu JSON válido. Confira se a URL termina em /exec e se o aplicativo foi implantado com acesso permitido.");
+      }
+
+      if (!resposta.ok) {
+        throw new Error(resultado.aviso || ("O servidor respondeu com HTTP " + resposta.status + "."));
+      }
+
+      return resultado;
+    }
+
+    // ----------------------------------------------------------
+    // LANÇAMENTO DA NOTA
+    // ----------------------------------------------------------
+    async function lancarNota(link) {
+      if (enviando) return;
+      if (!senhaAtual) {
+        abrirTelaSenha(false);
+        return;
+      }
+
+      let linkValidado;
+      try {
+        linkValidado = validarLinkNota(link);
+      } catch (erro) {
+        mostrarStatus(erro.message, "error");
+        return;
+      }
+
+      elementos.resultCard.classList.remove("visible");
+      limparStatus();
+      setCarregando(true, "Buscando a nota...");
+
+      try {
+        const resultado = await chamarMotor({
+          senha: senhaAtual,
+          acao: "lancar",
+          link: linkValidado,
+          loja: "",
+          categoria: ""
+        });
+
+        if (!resultado || resultado.ok !== true) {
+          const aviso = resultado && resultado.aviso ? resultado.aviso : "O motor não conseguiu lançar esta nota.";
+          if (/senha inválida/i.test(aviso)) {
+            mostrarStatus(aviso + " Confira a senha ou use ‘Trocar senha’.", "error");
+          } else {
+            mostrarStatus(aviso, "error");
+          }
+          return;
+        }
+
+        apresentarResultado(resultado);
+        const aviso = resultado.aviso || "Nota lançada com sucesso!";
+        const duplicada = /já foi lançada/i.test(aviso);
+        mostrarStatus(aviso, duplicada ? "warning" : "success");
+        elementos.invoiceLink.value = linkValidado;
+
+      } catch (erro) {
+        mostrarStatus(erro.message || "Ocorreu um erro ao consultar a nota.", "error");
+      } finally {
+        setCarregando(false);
+      }
+    }
+
+    elementos.launchButton.addEventListener("click", function() {
+      lancarNota(elementos.invoiceLink.value);
+    });
+
+    elementos.invoiceLink.addEventListener("keydown", function(evento) {
+      if (evento.key === "Enter") {
+        evento.preventDefault();
+        lancarNota(elementos.invoiceLink.value);
+      }
+    });
+
+    // ----------------------------------------------------------
+    // MOSTRAR OS DADOS RETORNADOS PELO MOTOR
+    // ----------------------------------------------------------
+    function apresentarResultado(resultado) {
+      lojaAtual = String(resultado.loja || "Loja não identificada");
+      categoriaAtual = CATEGORIAS.includes(resultado.categoria) ? resultado.categoria : "Outros";
+
+      elementos.storeName.textContent = lojaAtual;
+      elementos.purchaseDate.textContent = resultado.data ? "Compra em " + resultado.data : "Data não informada";
+      elementos.purchaseTotal.textContent = formatarMoeda(resultado.total);
+      elementos.categorySelect.value = categoriaAtual;
+      elementos.resultCard.classList.add("visible");
+
+      const itens = Array.isArray(resultado.itens) ? resultado.itens : [];
+      elementos.itemCount.textContent = itens.length === 1 ? "1 item" : itens.length + " itens";
+      elementos.itemList.replaceChildren();
+
+      if (itens.length === 0) {
+        const vazio = document.createElement("div");
+        vazio.className = "empty-items";
+        vazio.textContent = "O motor não retornou os produtos desta nota. Caso ela já tenha sido lançada anteriormente, o sistema evita repetir o registro.";
+        elementos.itemList.appendChild(vazio);
+        return;
+      }
+
+      itens.forEach(function(item) {
+        const linha = document.createElement("article");
+        linha.className = "item-row";
+
+        const principal = document.createElement("div");
+        principal.className = "item-main";
+
+        const descricao = document.createElement("div");
+        descricao.className = "item-description";
+        descricao.textContent = item.descricao || "Produto sem descrição";
+
+        const total = document.createElement("div");
+        total.className = "item-total";
+        total.textContent = formatarMoeda(item.total);
+
+        principal.append(descricao, total);
+
+        const detalhe = document.createElement("div");
+        detalhe.className = "item-detail";
+        const quantidade = formatarQuantidade(item.quantidade);
+        const unidade = item.unidade ? " " + item.unidade : "";
+        detalhe.textContent = quantidade + unidade + " × " + formatarMoeda(item.precoUnitario);
+
+        linha.append(principal, detalhe);
+        elementos.itemList.appendChild(linha);
+      });
+    }
+
+    // ----------------------------------------------------------
+    // ALTERAÇÃO DA CATEGORIA DA LOJA
+    // ----------------------------------------------------------
+    elementos.categorySelect.addEventListener("change", async function() {
+      const novaCategoria = elementos.categorySelect.value;
+      const categoriaAnterior = categoriaAtual;
+
+      if (!lojaAtual || !senhaAtual) {
+        elementos.categorySelect.value = categoriaAnterior;
+        mostrarStatus("Não há uma loja carregada para atualizar a categoria.", "error");
+        return;
+      }
+
+      elementos.categorySelect.disabled = true;
+      mostrarStatus("Salvando categoria da loja...", "info");
+
+      try {
+        const resultado = await chamarMotor({
+          senha: senhaAtual,
+          acao: "categoria",
+          link: "",
+          loja: lojaAtual,
+          categoria: novaCategoria
+        });
+
+        if (!resultado || resultado.ok !== true) {
+          throw new Error((resultado && resultado.aviso) || "Não foi possível atualizar a categoria.");
+        }
+
+        categoriaAtual = novaCategoria;
+        mostrarStatus(resultado.aviso || "Categoria atualizada.", "success");
+
+      } catch (erro) {
+        elementos.categorySelect.value = categoriaAnterior;
+        mostrarStatus(erro.message || "Erro ao salvar a categoria.", "error");
+      } finally {
+        elementos.categorySelect.disabled = false;
+      }
+    });
+
+    // ----------------------------------------------------------
+    // CÂMERA E LEITOR DE QR CODE
+    // ----------------------------------------------------------
+    async function iniciarCamera() {
+      if (!senhaAtual) {
+        abrirTelaSenha(false);
+        return;
+      }
+      if (cameraLigada) return;
+
+      if (!window.isSecureContext) {
+        mostrarStatus("A câmera exige uma página HTTPS. Abra o aplicativo pelo endereço seguro do GitHub Pages.", "error");
+        return;
+      }
+
+      if (typeof window.Html5Qrcode === "undefined") {
+        mostrarStatus("Não consegui carregar a biblioteca de leitura de QR Code. Verifique sua conexão com a internet e recarregue a página.", "error");
+        return;
+      }
+
+      elementos.readerPanel.hidden = false;
+      elementos.readButton.disabled = true;
+      limparStatus();
+      mostrarStatus("Abrindo a câmera traseira...", "info");
+
+      try {
+        leitorQr = new Html5Qrcode("reader", {
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          verbose: false
+        });
+
+        const configuracao = {
+          fps: 10,
+          aspectRatio: 1.0,
+          qrbox: function(largura, altura) {
+            const lado = Math.max(150, Math.floor(Math.min(largura, altura) * 0.72));
+            return { width: lado, height: lado };
+          }
+        };
+
+        await leitorQr.start(
+          { facingMode: "environment" },
+          configuracao,
+          async function(textoDecodificado) {
+            if (leituraEmProcessamento) return;
+            leituraEmProcessamento = true;
+
+            const linkLido = String(textoDecodificado || "").trim();
+            await pararCamera();
+            elementos.invoiceLink.value = linkLido;
+            await lancarNota(linkLido);
+            leituraEmProcessamento = false;
+          },
+          function() {
+            // Erros de leitura de cada quadro são normais enquanto procura o QR Code.
+          }
+        );
+
+        cameraLigada = true;
+        mostrarStatus("Câmera ligada. Aponte para o QR Code da notinha.", "info");
+
+      } catch (erro) {
+        cameraLigada = false;
+        try {
+          if (leitorQr) leitorQr.clear();
+        } catch (ignorado) {}
+        leitorQr = null;
+        elementos.readerPanel.hidden = true;
+        mostrarStatus("Não foi possível abrir a câmera. Permita o acesso à câmera no navegador, feche outros aplicativos que estejam usando-a e tente novamente.", "error");
+
+      } finally {
+        elementos.readButton.disabled = !senhaAtual || enviando;
+      }
+    }
+
+    async function pararCamera() {
+      if (leitorQr) {
+        try {
+          if (cameraLigada || leitorQr.isScanning) {
+            await leitorQr.stop();
+          }
+        } catch (erro) {
+          // Continua a limpeza mesmo que o navegador já tenha encerrado o vídeo.
+        }
+
+        try {
+          leitorQr.clear();
+        } catch (erro) {
+          // A área pode já ter sido limpa pelo leitor.
+        }
+      }
+
+      leitorQr = null;
+      cameraLigada = false;
+      elementos.readerPanel.hidden = true;
+      elementos.readButton.disabled = !senhaAtual || enviando;
+    }
+
+    elementos.readButton.addEventListener("click", iniciarCamera);
+    elementos.stopCameraButton.addEventListener("click", async function() {
+      await pararCamera();
+      mostrarStatus("Leitura cancelada. A câmera foi desligada.", "info");
+    });
+
+    // ----------------------------------------------------------
+    // INICIALIZAÇÃO
+    // ----------------------------------------------------------
+    (function inicializar() {
+      senhaAtual = carregarSenhaSalva();
+      elementos.readButton.disabled = !senhaAtual;
+      elementos.launchButton.disabled = !senhaAtual;
+      if (!senhaAtual) {
+        abrirTelaSenha(false);
+      }
+    })();
+  </script>
+</body>
+</html>
