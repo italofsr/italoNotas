@@ -519,8 +519,8 @@
           <div>
             <label for="decoderSelect">Modo do leitor</label>
             <select id="decoderSelect" class="select-input">
-              <option value="auto">Automático (nativo + ZXing quando disponíveis)</option>
-              <option value="zxing">ZXing (compatibilidade)</option>
+              <option value="auto">ZXing-C++ (principal) + alternativas</option>
+              <option value="zxing">Leitor anterior (compatibilidade)</option>
             </select>
           </div>
           <div id="cameraChoiceWrap" hidden>
@@ -678,6 +678,95 @@
     let fotoCanvasFonte = null;
     let selecaoRecorte = null;
     let inicioRecorte = null;
+    let carregamentoWasm = null;
+    let wasmDisponivel = false;
+    let intervaloWasm = null;
+    let wasmLendo = false;
+    let ultimaFalhaWasm = "";
+    const URL_ZXING_WASM = "https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.6/dist/iife/reader/index.js";
+
+    async function carregarWasm_() {
+      if (window.ZXingWASM && typeof window.ZXingWASM.readBarcodes === "function") {
+        wasmDisponivel = true;
+        return window.ZXingWASM;
+      }
+      if (!carregamentoWasm) {
+        carregamentoWasm = new Promise(function(resolve, reject) {
+          const script = document.createElement("script");
+          script.src = URL_ZXING_WASM;
+          script.async = true;
+          let pronto = false;
+          const tempo = window.setTimeout(function() { concluir(new Error("Tempo esgotado ao carregar ZXing-C++.")); }, 12000);
+          function concluir(erro) {
+            if (pronto) return;
+            pronto = true;
+            window.clearTimeout(tempo);
+            script.onload = null;
+            script.onerror = null;
+            if (erro) { script.remove(); reject(erro); }
+            else if (window.ZXingWASM && typeof window.ZXingWASM.readBarcodes === "function") resolve(window.ZXingWASM);
+            else reject(new Error("O módulo ZXing-C++ não inicializou."));
+          }
+          script.onload = function() { concluir(); };
+          script.onerror = function() { concluir(new Error("Não foi possível carregar o ZXing-C++ da CDN.")); };
+          document.head.appendChild(script);
+        }).finally(function() { carregamentoWasm = null; });
+      }
+      const modulo = await carregamentoWasm;
+      wasmDisponivel = true;
+      return modulo;
+    }
+
+    async function lerComWasm_(canvas) {
+      const modulo = await carregarWasm_();
+      const contexto = canvas.getContext("2d", { willReadFrequently: true });
+      if (!contexto) throw new Error("Não foi possível ler os pixels da imagem.");
+      const imagem = contexto.getImageData(0, 0, canvas.width, canvas.height);
+      const resultados = await modulo.readBarcodes(imagem, {
+        formats: ["QRCode"],
+        tryHarder: true,
+        tryRotate: true,
+        tryInvert: true,
+        tryDenoise: true,
+        tryDownscale: false,
+        maxNumberOfSymbols: 1
+      });
+      if (!resultados.length || !resultados[0].text) throw new Error("ZXing-C++ não encontrou QR Code decodificável.");
+      return resultados[0].text;
+    }
+
+    function pararLeituraWasm_() {
+      if (intervaloWasm !== null) window.clearInterval(intervaloWasm);
+      intervaloWasm = null;
+    }
+
+    function iniciarLeituraWasm_() {
+      pararLeituraWasm_();
+      if (elementos.decoderSelect.value === "zxing" || !wasmDisponivel) return;
+      const canvas = document.createElement("canvas");
+      let ultimoQuadro = 0;
+      intervaloWasm = window.setInterval(async function() {
+        if (!cameraLigada || leituraEmProcessamento || wasmLendo || enviando) return;
+        const video = document.querySelector("#reader video");
+        if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+        const agora = Date.now();
+        if (agora - ultimoQuadro < 850) return;
+        ultimoQuadro = agora;
+        wasmLendo = true;
+        try {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.getContext("2d", { willReadFrequently: true }).drawImage(video, 0, 0, canvas.width, canvas.height);
+          const texto = await lerComWasm_(canvas);
+          if (cameraLigada) await processarQr_(texto);
+        } catch (erro) {
+          // A maioria dos quadros não contém um código decodificável.
+          ultimaFalhaWasm = erro && erro.message ? erro.message : String(erro);
+        } finally {
+          wasmLendo = false;
+        }
+      }, 300);
+    }
 
     // Registra erros não tratados mesmo quando ocorrem fora dos botões.
     window.addEventListener("error", function(evento) {
@@ -1165,6 +1254,7 @@
     }
 
     async function pararCamera() {
+      pararLeituraWasm_();
       cancelarAvisoLeitura_();
       elementos.zoomWrap.hidden = true;
       if (leitorQr) {
@@ -1229,6 +1319,14 @@
 
       try {
         await carregarBibliotecaQr_();
+        if (elementos.decoderSelect.value !== "zxing") {
+          try {
+            await carregarWasm_();
+          } catch (erro) {
+            wasmDisponivel = false;
+            ultimaFalhaWasm = erro.message || String(erro);
+          }
+        }
         const cameras = await listarCameras_();
         const selecionada = idPreferido || cameraEscolhida || escolherCameraPrincipal_(cameras);
         if (selecionada) {
@@ -1271,8 +1369,14 @@
           // A resolução disponível continua válida.
         }
         await atualizarZoom_();
+        iniciarLeituraWasm_();
         prepararAvisoLeitura_();
-        mostrarStatus("Câmera ligada. Enquadre o QR Code na distância em que ele fica nítido.", "info");
+        mostrarStatus(
+          "Câmera ligada. " + (elementos.decoderSelect.value !== "zxing" && wasmDisponivel
+          ? "ZXing-C++ está analisando os quadros; o leitor anterior também está ativo."
+          : "Leitor de compatibilidade ativo." + (ultimaFalhaWasm ? " ZXing-C++ indisponível: " + ultimaFalhaWasm : "")) +
+          " Mantenha o QR Code na distância em que fica nítido.", "info"
+        );
 
       } catch (erro) {
         await pararCamera();
@@ -1365,7 +1469,7 @@
           imagem.onerror = function() { reject(new Error("Imagem inválida ou incompatível.")); };
           imagem.src = url;
         });
-        const tamanho = Math.min(1, 2400 / Math.max(imagem.naturalWidth, imagem.naturalHeight));
+        const tamanho = 1; // Não reduzir a foto original: preservar detalhes de códigos densos.
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(imagem.naturalWidth * tamanho));
         canvas.height = Math.max(1, Math.round(imagem.naturalHeight * tamanho));
@@ -1386,10 +1490,15 @@
       const sh = Math.max(1, Math.min(fonte.height - sy, Math.round(r.h * fonte.height)));
       const canvas = document.createElement("canvas");
       // Mantém boa resolução sem inventar detalhes por ampliação excessiva.
-      const escala = Math.max(1, Math.min(2, 1400 / Math.max(sw, sh)));
-      canvas.width = Math.round(sw * escala);
-      canvas.height = Math.round(sh * escala);
-      canvas.getContext("2d").drawImage(fonte, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      // Inclui margem branca no recorte, sem cortar a região marcada.
+      const margem = recortar ? Math.max(8, Math.round(Math.max(sw, sh) * 0.035)) : 0;
+      const escala = 1;
+      canvas.width = Math.round(sw * escala) + 2 * margem;
+      canvas.height = Math.round(sh * escala) + 2 * margem;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(fonte, sx, sy, sw, sh, margem, margem, sw, sh);
       return canvas;
     }
 
@@ -1435,19 +1544,27 @@
     async function tentarLerImagem_(recortar) {
       const canvas = criarImagemParaLeitura_(recortar);
       const erros = [];
-      const tentativas = elementos.decoderSelect.value === "zxing"
-        ? [tentarZxing_]
-        : [tentarDetectorNativo_, tentarZxing_];
-      for (const tentativa of tentativas) {
+      const modoAntigo = elementos.decoderSelect.value === "zxing";
+      if (!modoAntigo) {
+        try {
+          const resultado = await lerComWasm_(canvas);
+          validarLinkNota(resultado);
+          return resultado;
+        } catch (erro) {
+          erros.push("ZXing-C++: " + (erro.message || String(erro)));
+        }
+      }
+      const alternativas = modoAntigo ? [tentarZxing_] : [tentarDetectorNativo_, tentarZxing_];
+      for (const tentativa of alternativas) {
         try {
           const texto = await tentativa(canvas);
           validarLinkNota(texto);
           return texto;
         } catch (erro) {
-          erros.push(erro.message || String(erro));
+          erros.push((tentativa === tentarDetectorNativo_ ? "Detector nativo: " : "ZXing anterior: ") + (erro.message || String(erro)));
         }
       }
-      throw new Error("Nenhum leitor reconheceu um link de NFC-e nesta região. " + erros.join(" | "));
+      throw new Error("Nenhum dos mecanismos reconheceu um link NFC-e. " + erros.join(" | "));
     }
 
     async function analisarFoto_(recortar) {
