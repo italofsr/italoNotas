@@ -419,13 +419,13 @@
       position: fixed;
       z-index: 1000;
       inset: 0;
-      display: grid;
+      display: none;
       place-items: center;
       padding: 20px;
-      background: rgba(8, 20, 12, .72);
+      background: rgba(8, 20, 12, .78);
     }
 
-    .password-overlay[hidden] { display: none; }
+    .password-overlay.open { display: grid; }
 
     .password-box {
       width: min(100%, 430px);
@@ -538,7 +538,7 @@
     <p class="footer-note">Os lançamentos são enviados para sua planilha Google.</p>
   </main>
 
-  <div id="passwordOverlay" class="password-overlay" hidden>
+  <div id="passwordOverlay" class="password-overlay" aria-hidden="true">
     <form id="passwordForm" class="password-box">
       <h2 id="passwordTitle">Acesso ao seu controle</h2>
       <p id="passwordDescription">Informe a senha configurada no Apps Script. Ela ficará salva somente neste navegador.</p>
@@ -560,9 +560,10 @@
     // CONFIGURAÇÃO: COLE AQUI A URL DO APLICATIVO DA WEB DO GAS
     // Exemplo: https://script.google.com/macros/s/SEU_ID/exec
     // ==========================================================
-    const URL_DO_MOTOR = "https://script.google.com/macros/s/AKfycbzY8q77Xfls4C_M3UYNuPW_lHHRG-4Tp8l3DIjUKI4uSSaiSuvitO-kHKMlfxgIqqazvg/exec";
+    const URL_DO_MOTOR = "COLE_AQUI_A_URL_DO_SEU_APPS_SCRIPT";
 
-    const CHAVE_SENHA_LOCAL = "minhas_notinhas_senha_v1";
+    // v2 força uma nova solicitação de senha após esta atualização.
+    const CHAVE_SENHA_LOCAL = "minhas_notinhas_senha_v2";
     const CATEGORIAS = ["Mercado", "Farmácia", "Combustível", "Restaurante", "Outros"];
 
     const elementos = {
@@ -619,12 +620,14 @@
       elementos.passwordInput.value = "";
       elementos.passwordError.textContent = "";
       elementos.cancelPasswordButton.hidden = !modoTroca;
-      elementos.passwordOverlay.hidden = false;
-      window.setTimeout(() => elementos.passwordInput.focus(), 80);
+      elementos.passwordOverlay.classList.add("open");
+      elementos.passwordOverlay.setAttribute("aria-hidden", "false");
+      window.setTimeout(() => elementos.passwordInput.focus(), 120);
     }
 
     function fecharTelaSenha() {
-      elementos.passwordOverlay.hidden = true;
+      elementos.passwordOverlay.classList.remove("open");
+      elementos.passwordOverlay.setAttribute("aria-hidden", "true");
     }
 
     elementos.passwordForm.addEventListener("submit", function(evento) {
@@ -668,8 +671,8 @@
 
     function setCarregando(ativo, texto) {
       enviando = ativo;
-      elementos.readButton.disabled = ativo || !senhaAtual;
-      elementos.launchButton.disabled = ativo || !senhaAtual;
+      elementos.readButton.disabled = ativo;
+      elementos.launchButton.disabled = ativo;
       elementos.invoiceLink.disabled = ativo;
       elementos.changePasswordButton.disabled = ativo;
       if (ativo) {
@@ -986,7 +989,7 @@
         mostrarStatus("Não foi possível abrir a câmera. Permita o acesso à câmera no navegador, feche outros aplicativos que estejam usando-a e tente novamente.", "error");
 
       } finally {
-        elementos.readButton.disabled = !senhaAtual || enviando;
+        elementos.readButton.disabled = enviando;
       }
     }
 
@@ -1010,7 +1013,7 @@
       leitorQr = null;
       cameraLigada = false;
       elementos.readerPanel.hidden = true;
-      elementos.readButton.disabled = !senhaAtual || enviando;
+      elementos.readButton.disabled = enviando;
     }
 
     elementos.readButton.addEventListener("click", iniciarCamera);
@@ -1024,8 +1027,11 @@
     // ----------------------------------------------------------
     (function inicializar() {
       senhaAtual = carregarSenhaSalva();
-      elementos.readButton.disabled = !senhaAtual;
-      elementos.launchButton.disabled = !senhaAtual;
+
+      // Os botões permanecem clicáveis: sem senha, o clique abre o modal.
+      elementos.readButton.disabled = false;
+      elementos.launchButton.disabled = false;
+
       if (!senhaAtual) {
         abrirTelaSenha(false);
       }
