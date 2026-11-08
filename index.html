@@ -271,6 +271,33 @@
       font-size: 13px;
     }
 
+    .reader-controls {
+      display: grid;
+      gap: 12px;
+      margin-top: 13px;
+    }
+
+    .reader-controls label {
+      display: block;
+      font-size: 14px;
+      font-weight: 650;
+      margin-bottom: 5px;
+    }
+
+    .reader-controls select {
+      min-height: 45px;
+    }
+
+    .reader-controls input[type="range"] {
+      width: 100%;
+      min-height: 34px;
+      accent-color: #86efac;
+    }
+
+    .gallery-input {
+      display: none;
+    }
+
     .stop-button {
       display: block;
       width: 100%;
@@ -484,7 +511,17 @@
         <div class="reader-frame">
           <div id="reader"></div>
         </div>
-        <p class="reader-note">A câmera será desligada assim que o código for lido.</p>
+        <p id="readerNote" class="reader-note">A câmera será desligada assim que o código for lido.</p>
+        <div class="reader-controls">
+          <div id="cameraChoiceWrap" hidden>
+            <label for="cameraSelect">Câmera utilizada</label>
+            <select id="cameraSelect" class="select-input" aria-label="Selecionar câmera"></select>
+          </div>
+          <div id="zoomWrap" hidden>
+            <label for="zoomRange">Zoom da câmera: <span id="zoomValue">1×</span></label>
+            <input id="zoomRange" type="range" min="1" max="3" step="0.1" value="1">
+          </div>
+        </div>
         <button id="stopCameraButton" class="stop-button" type="button">Fechar câmera</button>
       </section>
 
@@ -501,6 +538,8 @@
         placeholder="https://nfce.sefaz.pe.gov.br/..."
       >
       <button id="launchButton" class="secondary-button" type="button">Lançar</button>
+      <button id="galleryButton" class="secondary-button" type="button">Ler QR de uma foto</button>
+      <input id="galleryInput" class="gallery-input" type="file" accept="image/*" aria-label="Selecionar foto do QR Code">
     </section>
 
     <div id="statusMessage" class="status" role="status" aria-live="polite"></div>
@@ -569,6 +608,14 @@
       readButton: document.getElementById("readButton"),
       launchButton: document.getElementById("launchButton"),
       stopCameraButton: document.getElementById("stopCameraButton"),
+      cameraChoiceWrap: document.getElementById("cameraChoiceWrap"),
+      cameraSelect: document.getElementById("cameraSelect"),
+      zoomWrap: document.getElementById("zoomWrap"),
+      zoomRange: document.getElementById("zoomRange"),
+      zoomValue: document.getElementById("zoomValue"),
+      readerNote: document.getElementById("readerNote"),
+      galleryButton: document.getElementById("galleryButton"),
+      galleryInput: document.getElementById("galleryInput"),
       readerPanel: document.getElementById("readerPanel"),
       invoiceLink: document.getElementById("invoiceLink"),
       status: document.getElementById("statusMessage"),
@@ -597,6 +644,10 @@
     let enviando = false;
     let modoTrocaSenha = false;
     let carregamentoQr = null;
+    let camerasDisponiveis = [];
+    let cameraEscolhida = "";
+    let iniciandoLeitor = false;
+    let avisoSemLeitura = null;
 
     // Registra erros não tratados mesmo quando ocorrem fora dos botões.
     window.addEventListener("error", function(evento) {
@@ -997,127 +1048,254 @@
     });
 
     // ----------------------------------------------------------
-    // CÂMERA E LEITOR DE QR CODE
+    // CÂMERA, ZOOM E LEITURA DE IMAGEM
     // ----------------------------------------------------------
-    async function iniciarCamera() {
-      if (!senhaAtual) {
-        abrirTelaSenha(false);
-        return;
-      }
-      if (cameraLigada) return;
-
-      if (!window.isSecureContext) {
-        mostrarStatus("A câmera exige uma página HTTPS. Abra o aplicativo pelo endereço seguro do GitHub Pages.", "error");
-        return;
-      }
-
-      elementos.readerPanel.hidden = false;
-      elementos.readButton.disabled = true;
-      limparStatus();
-      mostrarStatus("Preparando o leitor de QR Code...", "info");
-
-      try {
-        await carregarBibliotecaQr_();
-        mostrarStatus("Solicitando acesso à câmera traseira...", "info");
-
-        leitorQr = new Html5Qrcode("reader", {
-          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-          verbose: false
-        });
-
-        const configuracao = {
-          fps: 10,
-          aspectRatio: 1.0,
-          qrbox: function(largura, altura) {
-            const lado = Math.max(150, Math.floor(Math.min(largura, altura) * 0.72));
-            return { width: lado, height: lado };
-          }
-        };
-
-        const aoLer = async function(textoDecodificado) {
-          if (leituraEmProcessamento) return;
-          leituraEmProcessamento = true;
-          try {
-            const linkLido = String(textoDecodificado || "").trim();
-            await pararCamera();
-            elementos.invoiceLink.value = linkLido;
-            await lancarNota(linkLido);
-          } finally {
-            leituraEmProcessamento = false;
-          }
-        };
-        const aoErroLeitura = function() {
-          // Falhas de leitura de quadros são normais até encontrar o código.
-        };
-
-        // Primeiro, tenta o dispositivo traseiro explícito; depois, facingMode.
-        let cameraSelecionada = { facingMode: "environment" };
-        try {
-          const cameras = await Html5Qrcode.getCameras();
-          const traseira = cameras.find(function(c) {
-            return /back|rear|environment|traseira|posterior/i.test(c.label || "");
-          });
-          if (traseira) cameraSelecionada = traseira.id;
-        } catch (erro) {
-          // Alguns navegadores só listam câmeras depois da permissão.
-        }
-
-        try {
-          await leitorQr.start(cameraSelecionada, configuracao, aoLer, aoErroLeitura);
-        } catch (primeiroErro) {
-          if (typeof cameraSelecionada !== "string") throw primeiroErro;
-          // Fallback, caso a câmera identificada esteja ocupada ou indisponível.
-          await leitorQr.start({ facingMode: "environment" }, configuracao, aoLer, aoErroLeitura);
-        }
-
-        cameraLigada = true;
-        mostrarStatus("Câmera ligada. Aponte para o QR Code da notinha.", "info");
-
-      } catch (erro) {
-        cameraLigada = false;
-        try {
-          if (leitorQr) leitorQr.clear();
-        } catch (ignorado) {}
-        leitorQr = null;
-        elementos.readerPanel.hidden = true;
-        const detalhe = erro && erro.message ? erro.message : String(erro || "Erro desconhecido");
-        const mensagem = /permission|notallowed|denied|permiss/i.test(detalhe)
-          ? "Permissão da câmera negada. Autorize a câmera nas configurações do navegador. Detalhes: " + detalhe
-          : "Não foi possível abrir o leitor. Confira a internet, o acesso à câmera e se outro aplicativo a está usando. Detalhes: " + detalhe;
-        mostrarStatus(mensagem, "error");
-
-      } finally {
-        elementos.readButton.disabled = enviando;
+    function cancelarAvisoLeitura_() {
+      if (avisoSemLeitura !== null) {
+        window.clearTimeout(avisoSemLeitura);
+        avisoSemLeitura = null;
       }
     }
 
+    function prepararAvisoLeitura_() {
+      cancelarAvisoLeitura_();
+      avisoSemLeitura = window.setTimeout(function() {
+        if (cameraLigada && !leituraEmProcessamento) {
+          mostrarStatus("A câmera está ligada, mas ainda não reconheceu um QR Code. Mantenha-o nítido, afaste um pouco ou utilize Zoom, Trocar câmera ou Ler QR de uma foto.", "warning");
+        }
+      }, 9000);
+    }
+
+    async function atualizarZoom_() {
+      elementos.zoomWrap.hidden = true;
+      if (!leitorQr || !leitorQr.isScanning || typeof leitorQr.getRunningTrackCapabilities !== "function") return;
+      try {
+        const capacidade = leitorQr.getRunningTrackCapabilities();
+        if (!capacidade || !capacidade.zoom || typeof leitorQr.applyVideoConstraints !== "function") return;
+        const zoom = capacidade.zoom;
+        const menor = Number(zoom.min), maior = Number(zoom.max);
+        if (!Number.isFinite(menor) || !Number.isFinite(maior) || maior <= menor) return;
+        elementos.zoomRange.min = String(menor);
+        elementos.zoomRange.max = String(maior);
+        elementos.zoomRange.step = String(zoom.step || 0.1);
+        let atual = menor;
+        if (typeof leitorQr.getRunningTrackSettings === "function") {
+          atual = Number(leitorQr.getRunningTrackSettings().zoom || menor);
+        }
+        elementos.zoomRange.value = String(atual);
+        elementos.zoomValue.textContent = atual.toFixed(1).replace(".", ",") + "×";
+        elementos.zoomWrap.hidden = false;
+      } catch (erro) {
+        // Zoom é opcional e não deve impedir a leitura.
+      }
+    }
+
+    elementos.zoomRange.addEventListener("input", async function() {
+      const valor = Number(elementos.zoomRange.value);
+      elementos.zoomValue.textContent = valor.toFixed(1).replace(".", ",") + "×";
+      if (!leitorQr || !leitorQr.isScanning) return;
+      try {
+        await leitorQr.applyVideoConstraints({ advanced: [{ zoom: valor }] });
+      } catch (erro) {
+        elementos.zoomWrap.hidden = true;
+        mostrarStatus("Este navegador não permitiu controlar o zoom. Afaste um pouco o celular ou use a foto da galeria.", "warning");
+      }
+    });
+
+    async function listarCameras_() {
+      try {
+        camerasDisponiveis = await Html5Qrcode.getCameras();
+      } catch (erro) {
+        camerasDisponiveis = [];
+      }
+      elementos.cameraSelect.replaceChildren();
+      camerasDisponiveis.forEach(function(camera, indice) {
+        const opcao = document.createElement("option");
+        opcao.value = camera.id;
+        opcao.textContent = camera.label || "Câmera " + (indice + 1);
+        elementos.cameraSelect.appendChild(opcao);
+      });
+      elementos.cameraChoiceWrap.hidden = camerasDisponiveis.length < 2;
+      return camerasDisponiveis;
+    }
+
+    function escolherCameraPrincipal_(cameras) {
+      if (!cameras.length) return "";
+      // Evita lentes ultrawide e macro quando uma lente principal está disponível.
+      const traseiras = cameras.filter(function(c) {
+        return /back|rear|environment|traseira|posterior/i.test(c.label || "");
+      });
+      const preferidas = traseiras.filter(function(c) {
+        return !/ultra|wide|macro|tele|depth|profundidade|0[.,]5/i.test(c.label || "");
+      });
+      const principal = preferidas.find(function(c) {
+        return /main|principal|1x|wide/i.test(c.label || "");
+      });
+      return (principal || preferidas[0] || traseiras[0] || cameras[0]).id;
+    }
+
     async function pararCamera() {
+      cancelarAvisoLeitura_();
+      elementos.zoomWrap.hidden = true;
       if (leitorQr) {
         try {
-          if (cameraLigada || leitorQr.isScanning) {
-            await leitorQr.stop();
-          }
+          if (leitorQr.isScanning) await leitorQr.stop();
         } catch (erro) {
-          // Continua a limpeza mesmo que o navegador já tenha encerrado o vídeo.
+          // Continua a limpeza se o vídeo já foi encerrado.
         }
-
         try {
           leitorQr.clear();
-        } catch (erro) {
-          // A área pode já ter sido limpa pelo leitor.
-        }
+        } catch (erro) {}
       }
-
       leitorQr = null;
       cameraLigada = false;
       elementos.readerPanel.hidden = true;
       elementos.readButton.disabled = enviando;
     }
 
-    elementos.readButton.addEventListener("click", iniciarCamera);
+    async function processarQr_(textoDecodificado) {
+      if (leituraEmProcessamento) return;
+      leituraEmProcessamento = true;
+      cancelarAvisoLeitura_();
+      try {
+        const linkLido = String(textoDecodificado || "").trim();
+        // Valida antes de interromper a câmera, para não fechar com um QR qualquer.
+        validarLinkNota(linkLido);
+        await pararCamera();
+        elementos.invoiceLink.value = linkLido;
+        mostrarStatus("QR Code reconhecido! Consultando a notinha...", "success");
+        await lancarNota(linkLido);
+      } catch (erro) {
+        mostrarStatus("QR Code reconhecido, mas não é um link de NFC-e de Pernambuco: " + erro.message, "warning");
+        if (cameraLigada) prepararAvisoLeitura_();
+      } finally {
+        leituraEmProcessamento = false;
+      }
+    }
+
+    async function iniciarCamera(idPreferido) {
+      if (!senhaAtual) {
+        abrirTelaSenha(false);
+        return;
+      }
+      if (iniciandoLeitor || cameraLigada || enviando) return;
+      if (!window.isSecureContext) {
+        mostrarStatus("A câmera precisa de HTTPS. Abra o endereço do GitHub Pages.", "error");
+        return;
+      }
+      iniciandoLeitor = true;
+      elementos.readButton.disabled = true;
+      elementos.readerPanel.hidden = false;
+      elementos.zoomWrap.hidden = true;
+      mostrarStatus("Preparando a câmera e o leitor de QR Code...", "info");
+
+      try {
+        await carregarBibliotecaQr_();
+        const cameras = await listarCameras_();
+        const selecionada = idPreferido || cameraEscolhida || escolherCameraPrincipal_(cameras);
+        if (selecionada) {
+          cameraEscolhida = selecionada;
+          elementos.cameraSelect.value = selecionada;
+        }
+
+        leitorQr = new Html5Qrcode("reader", {
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          verbose: false
+        });
+
+        // O vídeo conserva a proporção nativa; somente a moldura visual é quadrada.
+        const configuracao = {
+          fps: 12,
+          qrbox: function(largura, altura) {
+            const lado = Math.max(120, Math.floor(Math.min(largura, altura) * 0.88));
+            return { width: Math.min(lado, largura), height: Math.min(lado, altura) };
+          }
+        };
+        const sucesso = function(texto) { void processarQr_(texto); };
+        const erroQuadro = function() {
+          // QR ainda não encontrado; não exibir centenas de mensagens por segundo.
+        };
+
+        mostrarStatus("Abrindo a câmera. Se solicitado, permita o acesso.", "info");
+        try {
+          await leitorQr.start(selecionada || { facingMode: "environment" }, configuracao, sucesso, erroQuadro);
+        } catch (erroPrimeira) {
+          if (!selecionada) throw erroPrimeira;
+          // A listagem pode apontar para um dispositivo indisponível.
+          await leitorQr.start({ facingMode: "environment" }, configuracao, sucesso, erroQuadro);
+        }
+
+        cameraLigada = true;
+        await atualizarZoom_();
+        prepararAvisoLeitura_();
+        mostrarStatus("Câmera ligada. Enquadre o QR Code na distância em que ele fica nítido.", "info");
+
+      } catch (erro) {
+        await pararCamera();
+        const detalhe = erro && erro.message ? erro.message : String(erro || "Erro desconhecido");
+        mostrarStatus("Não foi possível iniciar a câmera/leitor: " + detalhe + ". Confira a permissão da câmera ou tente a leitura por foto.", "error");
+      } finally {
+        iniciandoLeitor = false;
+        elementos.readButton.disabled = enviando;
+      }
+    }
+
+    elementos.cameraSelect.addEventListener("change", async function() {
+      const id = elementos.cameraSelect.value;
+      if (!id || id === cameraEscolhida) return;
+      cameraEscolhida = id;
+      await pararCamera();
+      await iniciarCamera(id);
+    });
+
+    elementos.readButton.addEventListener("click", function() { void iniciarCamera(); });
     elementos.stopCameraButton.addEventListener("click", async function() {
       await pararCamera();
       mostrarStatus("Leitura cancelada. A câmera foi desligada.", "info");
+    });
+
+    elementos.galleryButton.addEventListener("click", function() {
+      if (!senhaAtual) {
+        abrirTelaSenha(false);
+        return;
+      }
+      elementos.galleryInput.value = "";
+      elementos.galleryInput.click();
+    });
+
+    elementos.galleryInput.addEventListener("change", async function() {
+      const arquivo = elementos.galleryInput.files && elementos.galleryInput.files[0];
+      if (!arquivo) return;
+      if (!arquivo.type.startsWith("image/")) {
+        mostrarStatus("Selecione uma foto no formato de imagem.", "error");
+        return;
+      }
+      elementos.galleryButton.disabled = true;
+      mostrarStatus("Procurando o QR Code na imagem...", "info");
+      let leitorImagem = null;
+      try {
+        await pararCamera();
+        await carregarBibliotecaQr_();
+        elementos.readerPanel.hidden = false;
+        leitorImagem = new Html5Qrcode("reader", { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
+        const texto = await leitorImagem.scanFile(arquivo, true);
+        try {
+          leitorImagem.clear();
+        } catch (erro) {}
+        leitorImagem = null;
+        elementos.readerPanel.hidden = true;
+        await processarQr_(texto);
+      } catch (erro) {
+        const detalhe = erro && erro.message ? erro.message : String(erro || "Falha desconhecida");
+        mostrarStatus("Não consegui reconhecer um QR Code na foto. Tente uma foto mais nítida, com o código inteiro visível. Detalhes: " + detalhe, "warning");
+      } finally {
+        if (leitorImagem) {
+          try { leitorImagem.clear(); } catch (erro) {}
+        }
+        elementos.readerPanel.hidden = true;
+        elementos.galleryButton.disabled = false;
+        elementos.galleryInput.value = "";
+      }
     });
 
     // ----------------------------------------------------------
