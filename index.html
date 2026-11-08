@@ -678,13 +678,13 @@
 
     function abrirTelaSenha(troca) {
       modoTrocaSenha = Boolean(troca);
-      elementos.passwordTitle.textContent = modoTroca ? "Trocar senha" : "Acesso ao seu controle";
-      elementos.passwordDescription.textContent = modoTroca
+      elementos.passwordTitle.textContent = modoTrocaSenha ? "Trocar senha" : "Acesso ao seu controle";
+      elementos.passwordDescription.textContent = modoTrocaSenha
         ? "Digite a nova senha cadastrada na função configurarSenha() do Apps Script."
         : "Informe a senha configurada no Apps Script. Ela ficará salva somente neste navegador.";
       elementos.passwordInput.value = "";
       elementos.passwordError.textContent = "";
-      elementos.cancelPasswordButton.hidden = !modoTroca;
+      elementos.cancelPasswordButton.hidden = !modoTrocaSenha;
       elementos.passwordOverlay.classList.add("open");
       elementos.passwordOverlay.setAttribute("aria-hidden", "false");
       window.setTimeout(() => elementos.passwordInput.focus(), 120);
