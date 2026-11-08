@@ -552,9 +552,7 @@
     </form>
   </div>
 
-  <!-- Biblioteca gratuita de leitura de QR Code, fixada na versão 2.3.8. -->
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-
+  <!-- A biblioteca QR é carregada apenas ao tocar em "Ler notinha", sem bloquear a tela. -->
   <script>
     // ==========================================================
     // CONFIGURAÇÃO: COLE AQUI A URL DO APLICATIVO DA WEB DO GAS
@@ -598,6 +596,73 @@
     let categoriaAtual = "Outros";
     let enviando = false;
     let modoTrocaSenha = false;
+    let carregamentoQr = null;
+
+    // Registra erros não tratados mesmo quando ocorrem fora dos botões.
+    window.addEventListener("error", function(evento) {
+      const origem = evento.filename ? " (" + evento.filename.split("/").pop() + ")" : "";
+      mostrarStatus("Erro no aplicativo" + origem + ": " + (evento.message || "Falha inesperada.") + " Atualize a página; se continuar, informe esta mensagem.", "error");
+    });
+    window.addEventListener("unhandledrejection", function(evento) {
+      const detalhe = evento.reason && evento.reason.message ? evento.reason.message : String(evento.reason || "Falha inesperada.");
+      mostrarStatus("Falha ao executar uma ação: " + detalhe, "error");
+    });
+
+    // Biblioteca gratuita, sempre na versão fixa 2.3.8.
+    // Se uma fonte estiver indisponível, tenta as seguintes.
+    const FONTES_QR = [
+      "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js",
+      "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"
+    ];
+
+    function carregarScriptQr_(url) {
+      return new Promise(function(resolve, reject) {
+        const script = document.createElement("script");
+        script.src = url;
+        script.async = true;
+        let concluido = false;
+        const tempo = window.setTimeout(function() {
+          finalizar(false, "Tempo esgotado ao carregar a biblioteca.");
+        }, 9000);
+        function finalizar(sucesso, mensagem) {
+          if (concluido) return;
+          concluido = true;
+          window.clearTimeout(tempo);
+          script.onload = null;
+          script.onerror = null;
+          if (sucesso && window.Html5Qrcode && window.Html5QrcodeSupportedFormats) {
+            resolve();
+          } else {
+            script.remove();
+            reject(new Error(mensagem || "Biblioteca não disponível nesta fonte."));
+          }
+        }
+        script.onload = function() { finalizar(true); };
+        script.onerror = function() { finalizar(false, "Não foi possível acessar " + new URL(url).hostname + "."); };
+        document.head.appendChild(script);
+      });
+    }
+
+    function carregarBibliotecaQr_() {
+      if (window.Html5Qrcode && window.Html5QrcodeSupportedFormats) return Promise.resolve();
+      if (carregamentoQr) return carregamentoQr;
+
+      carregamentoQr = (async function() {
+        const erros = [];
+        for (const fonte of FONTES_QR) {
+          try {
+            await carregarScriptQr_(fonte);
+            return;
+          } catch (erro) {
+            erros.push(erro.message);
+          }
+        }
+        throw new Error("Não foi possível carregar o leitor de QR Code. Verifique sua internet ou bloqueadores de conteúdo e tente novamente. Detalhes: " + erros.join(" | "));
+      })();
+
+      return carregamentoQr.finally(function() { carregamentoQr = null; });
+    }
 
     // ----------------------------------------------------------
     // SENHA: primeira utilização e troca posterior
@@ -727,30 +792,43 @@
     // CHAMADA AO GOOGLE APPS SCRIPT
     // ----------------------------------------------------------
     async function chamarMotor(dados) {
-      if (!URL_DO_MOTOR || URL_DO_MOTOR.includes("COLE_AQUI")) {
-        throw new Error("Configure a constante URL_DO_MOTOR no início do JavaScript com o endereço /exec do seu Apps Script.");
+      if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/.test(URL_DO_MOTOR)) {
+        throw new Error("A URL_DO_MOTOR deve conter o endereço /exec da implantação do Google Apps Script.");
       }
 
+      const controle = new AbortController();
+      const limite = window.setTimeout(function() { controle.abort(); }, 45000);
       let resposta;
       try {
         resposta = await fetch(URL_DO_MOTOR, {
           method: "POST",
+          mode: "cors",
           redirect: "follow",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(dados)
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(dados),
+          signal: controle.signal
         });
       } catch (erro) {
-        throw new Error("Não consegui conversar com o Apps Script. Confira a URL do motor, a implantação como Aplicativo da Web e a conexão. Se aparecer um erro de CORS, será necessário ajustar a integração do endpoint.");
+        if (erro.name === "AbortError") {
+          throw new Error("A consulta demorou mais de 45 segundos. Confira a execução no Apps Script e tente novamente antes de reenviar.");
+        }
+        throw new Error("A comunicação com o Apps Script foi bloqueada ou falhou (" + (erro.message || "falha de rede") + "). O Google pode redirecionar o retorno e o navegador pode impedir a leitura por CORS. Confira a implantação e o console do navegador.");
+      } finally {
+        window.clearTimeout(limite);
       }
 
-      const textoResposta = await resposta.text();
+      let textoResposta;
+      try {
+        textoResposta = await resposta.text();
+      } catch (erro) {
+        throw new Error("Não foi possível ler a resposta do Google. Pode haver bloqueio de CORS no redirecionamento.");
+      }
+
       let resultado;
       try {
         resultado = JSON.parse(textoResposta);
       } catch (erro) {
-        throw new Error("O Apps Script não devolveu JSON válido. Confira se a URL termina em /exec e se o aplicativo foi implantado com acesso permitido.");
+        throw new Error("O Google não devolveu JSON válido (HTTP " + resposta.status + "). Confirme que a implantação é pública para o aplicativo e que /exec aponta para a versão certa. Resposta: " + textoResposta.slice(0, 100).replace(/<[^>]*>/g, " ").trim());
       }
 
       if (!resposta.ok) {
@@ -933,17 +1011,15 @@
         return;
       }
 
-      if (typeof window.Html5Qrcode === "undefined") {
-        mostrarStatus("Não consegui carregar a biblioteca de leitura de QR Code. Verifique sua conexão com a internet e recarregue a página.", "error");
-        return;
-      }
-
       elementos.readerPanel.hidden = false;
       elementos.readButton.disabled = true;
       limparStatus();
-      mostrarStatus("Abrindo a câmera traseira...", "info");
+      mostrarStatus("Preparando o leitor de QR Code...", "info");
 
       try {
+        await carregarBibliotecaQr_();
+        mostrarStatus("Solicitando acesso à câmera traseira...", "info");
+
         leitorQr = new Html5Qrcode("reader", {
           formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
           verbose: false
@@ -958,23 +1034,41 @@
           }
         };
 
-        await leitorQr.start(
-          { facingMode: "environment" },
-          configuracao,
-          async function(textoDecodificado) {
-            if (leituraEmProcessamento) return;
-            leituraEmProcessamento = true;
-
+        const aoLer = async function(textoDecodificado) {
+          if (leituraEmProcessamento) return;
+          leituraEmProcessamento = true;
+          try {
             const linkLido = String(textoDecodificado || "").trim();
             await pararCamera();
             elementos.invoiceLink.value = linkLido;
             await lancarNota(linkLido);
+          } finally {
             leituraEmProcessamento = false;
-          },
-          function() {
-            // Erros de leitura de cada quadro são normais enquanto procura o QR Code.
           }
-        );
+        };
+        const aoErroLeitura = function() {
+          // Falhas de leitura de quadros são normais até encontrar o código.
+        };
+
+        // Primeiro, tenta o dispositivo traseiro explícito; depois, facingMode.
+        let cameraSelecionada = { facingMode: "environment" };
+        try {
+          const cameras = await Html5Qrcode.getCameras();
+          const traseira = cameras.find(function(c) {
+            return /back|rear|environment|traseira|posterior/i.test(c.label || "");
+          });
+          if (traseira) cameraSelecionada = traseira.id;
+        } catch (erro) {
+          // Alguns navegadores só listam câmeras depois da permissão.
+        }
+
+        try {
+          await leitorQr.start(cameraSelecionada, configuracao, aoLer, aoErroLeitura);
+        } catch (primeiroErro) {
+          if (typeof cameraSelecionada !== "string") throw primeiroErro;
+          // Fallback, caso a câmera identificada esteja ocupada ou indisponível.
+          await leitorQr.start({ facingMode: "environment" }, configuracao, aoLer, aoErroLeitura);
+        }
 
         cameraLigada = true;
         mostrarStatus("Câmera ligada. Aponte para o QR Code da notinha.", "info");
@@ -986,7 +1080,11 @@
         } catch (ignorado) {}
         leitorQr = null;
         elementos.readerPanel.hidden = true;
-        mostrarStatus("Não foi possível abrir a câmera. Permita o acesso à câmera no navegador, feche outros aplicativos que estejam usando-a e tente novamente.", "error");
+        const detalhe = erro && erro.message ? erro.message : String(erro || "Erro desconhecido");
+        const mensagem = /permission|notallowed|denied|permiss/i.test(detalhe)
+          ? "Permissão da câmera negada. Autorize a câmera nas configurações do navegador. Detalhes: " + detalhe
+          : "Não foi possível abrir o leitor. Confira a internet, o acesso à câmera e se outro aplicativo a está usando. Detalhes: " + detalhe;
+        mostrarStatus(mensagem, "error");
 
       } finally {
         elementos.readButton.disabled = enviando;
