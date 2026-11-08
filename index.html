@@ -1416,7 +1416,8 @@
       // Elemento isolado, para não interferir no leitor de vídeo principal.
       const holder = document.createElement("div");
       holder.id = "reader-image-" + Date.now();
-      holder.hidden = true;
+      // Oculto visualmente, mas com largura real para o scanFile calcular o canvas.
+      holder.style.cssText = "position:fixed;left:-10000px;top:0;width:640px;min-height:1px;opacity:0;pointer-events:none;";
       document.body.appendChild(holder);
       const leitor = new Html5Qrcode(holder.id, {
         formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
