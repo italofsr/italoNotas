@@ -294,9 +294,12 @@
       accent-color: #86efac;
     }
 
-    .gallery-input {
-      display: none;
-    }
+    .gallery-input { display: none; }
+    .crop-panel { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+    .crop-panel canvas { display: block; max-width: 100%; width: 100%; height: auto; touch-action: none; border-radius: 8px; border: 1px solid var(--line); cursor: crosshair; }
+    .crop-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .crop-actions button { min-height: 48px; margin-top: 9px; }
+    .crop-caption { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
 
     .stop-button {
       display: block;
@@ -513,6 +516,13 @@
         </div>
         <p id="readerNote" class="reader-note">A câmera será desligada assim que o código for lido.</p>
         <div class="reader-controls">
+          <div>
+            <label for="decoderSelect">Modo do leitor</label>
+            <select id="decoderSelect" class="select-input">
+              <option value="auto">Automático (nativo + ZXing quando disponíveis)</option>
+              <option value="zxing">ZXing (compatibilidade)</option>
+            </select>
+          </div>
           <div id="cameraChoiceWrap" hidden>
             <label for="cameraSelect">Câmera utilizada</label>
             <select id="cameraSelect" class="select-input" aria-label="Selecionar câmera"></select>
@@ -540,6 +550,17 @@
       <button id="launchButton" class="secondary-button" type="button">Lançar</button>
       <button id="galleryButton" class="secondary-button" type="button">Ler QR de uma foto</button>
       <input id="galleryInput" class="gallery-input" type="file" accept="image/*" aria-label="Selecionar foto do QR Code">
+      <section id="cropPanel" class="crop-panel" hidden aria-label="Recortar QR Code da foto">
+        <strong>Selecione a área do QR Code</strong>
+        <p class="crop-caption">Arraste o dedo sobre a imagem para marcar o código inteiro, incluindo uma pequena margem branca.</p>
+        <canvas id="cropCanvas" aria-label="Imagem da nota para selecionar o QR Code"></canvas>
+        <div class="crop-actions">
+          <button id="scanCropButton" class="secondary-button" type="button">Ler recorte</button>
+          <button id="scanFullButton" class="secondary-button" type="button">Ler foto inteira</button>
+        </div>
+        <button id="closeCropButton" class="secondary-button" type="button">Cancelar</button>
+      </section>
+      <p class="help-text" style="margin-top:12px">Se a câmera nativa da Samsung reconhecer o QR, toque no link exibido, copie o endereço completo da nota e cole no campo acima. O navegador não consegue capturar automaticamente a leitura feita pelo aplicativo de câmera da Samsung.</p>
     </section>
 
     <div id="statusMessage" class="status" role="status" aria-live="polite"></div>
@@ -610,6 +631,12 @@
       stopCameraButton: document.getElementById("stopCameraButton"),
       cameraChoiceWrap: document.getElementById("cameraChoiceWrap"),
       cameraSelect: document.getElementById("cameraSelect"),
+      decoderSelect: document.getElementById("decoderSelect"),
+      cropPanel: document.getElementById("cropPanel"),
+      cropCanvas: document.getElementById("cropCanvas"),
+      scanCropButton: document.getElementById("scanCropButton"),
+      scanFullButton: document.getElementById("scanFullButton"),
+      closeCropButton: document.getElementById("closeCropButton"),
       zoomWrap: document.getElementById("zoomWrap"),
       zoomRange: document.getElementById("zoomRange"),
       zoomValue: document.getElementById("zoomValue"),
@@ -648,6 +675,9 @@
     let cameraEscolhida = "";
     let iniciandoLeitor = false;
     let avisoSemLeitura = null;
+    let fotoCanvasFonte = null;
+    let selecaoRecorte = null;
+    let inicioRecorte = null;
 
     // Registra erros não tratados mesmo quando ocorrem fora dos botões.
     window.addEventListener("error", function(evento) {
@@ -1173,6 +1203,14 @@
       }
     }
 
+    elementos.decoderSelect.addEventListener("change", async function() {
+      if (cameraLigada) {
+        const id = cameraEscolhida;
+        await pararCamera();
+        await iniciarCamera(id);
+      }
+    });
+
     async function iniciarCamera(idPreferido) {
       if (!senhaAtual) {
         abrirTelaSenha(false);
@@ -1200,16 +1238,14 @@
 
         leitorQr = new Html5Qrcode("reader", {
           formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          useBarCodeDetectorIfSupported: elementos.decoderSelect.value !== "zxing",
           verbose: false
         });
 
         // O vídeo conserva a proporção nativa; somente a moldura visual é quadrada.
         const configuracao = {
-          fps: 12,
-          qrbox: function(largura, altura) {
-            const lado = Math.max(120, Math.floor(Math.min(largura, altura) * 0.88));
-            return { width: Math.min(lado, largura), height: Math.min(lado, altura) };
-          }
+          fps: 12
+          // Sem qrbox: examina todo o quadro capturado.
         };
         const sucesso = function(texto) { void processarQr_(texto); };
         const erroQuadro = function() {
@@ -1226,6 +1262,14 @@
         }
 
         cameraLigada = true;
+        // Solicita captura HD/Full HD quando a lente e o navegador permitirem.
+        try {
+          if (typeof leitorQr.applyVideoConstraints === "function") {
+            await leitorQr.applyVideoConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 } });
+          }
+        } catch (erro) {
+          // A resolução disponível continua válida.
+        }
         await atualizarZoom_();
         prepararAvisoLeitura_();
         mostrarStatus("Câmera ligada. Enquadre o QR Code na distância em que ele fica nítido.", "info");
@@ -1263,36 +1307,202 @@
       elementos.galleryInput.click();
     });
 
+    function desenharFoto_() {
+      if (!fotoCanvasFonte) return;
+      const canvas = elementos.cropCanvas;
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(fotoCanvasFonte, 0, 0, w, h);
+      if (selecaoRecorte) {
+        const r = selecaoRecorte;
+        ctx.save();
+        ctx.strokeStyle = "#16a34a";
+        ctx.lineWidth = Math.max(3, w / 250);
+        ctx.setLineDash([12, 7]);
+        ctx.strokeRect(r.x * w, r.y * h, r.w * w, r.h * h);
+        ctx.restore();
+      }
+    }
+
+    function posicaoNoCanvas_(evento) {
+      const rect = elementos.cropCanvas.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(1, (evento.clientX - rect.left) / rect.width)),
+        y: Math.max(0, Math.min(1, (evento.clientY - rect.top) / rect.height))
+      };
+    }
+
+    elementos.cropCanvas.addEventListener("pointerdown", function(evento) {
+      inicioRecorte = posicaoNoCanvas_(evento);
+      selecaoRecorte = null;
+      elementos.cropCanvas.setPointerCapture(evento.pointerId);
+      desenharFoto_();
+    });
+
+    elementos.cropCanvas.addEventListener("pointermove", function(evento) {
+      if (!inicioRecorte) return;
+      const fim = posicaoNoCanvas_(evento);
+      selecaoRecorte = {
+        x: Math.min(inicioRecorte.x, fim.x),
+        y: Math.min(inicioRecorte.y, fim.y),
+        w: Math.abs(inicioRecorte.x - fim.x),
+        h: Math.abs(inicioRecorte.y - fim.y)
+      };
+      desenharFoto_();
+    });
+
+    function terminarRecorte_() { inicioRecorte = null; }
+    elementos.cropCanvas.addEventListener("pointerup", terminarRecorte_);
+    elementos.cropCanvas.addEventListener("pointercancel", terminarRecorte_);
+
+    async function carregarFotoNoCanvas_(arquivo) {
+      const url = URL.createObjectURL(arquivo);
+      try {
+        const imagem = new Image();
+        await new Promise(function(resolve, reject) {
+          imagem.onload = resolve;
+          imagem.onerror = function() { reject(new Error("Imagem inválida ou incompatível.")); };
+          imagem.src = url;
+        });
+        const tamanho = Math.min(1, 2400 / Math.max(imagem.naturalWidth, imagem.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(imagem.naturalWidth * tamanho));
+        canvas.height = Math.max(1, Math.round(imagem.naturalHeight * tamanho));
+        canvas.getContext("2d").drawImage(imagem, 0, 0, canvas.width, canvas.height);
+        return canvas;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    function criarImagemParaLeitura_(recortar) {
+      if (!fotoCanvasFonte) throw new Error("Selecione uma foto.");
+      const fonte = fotoCanvasFonte;
+      const r = recortar && selecaoRecorte && selecaoRecorte.w > .02 && selecaoRecorte.h > .02
+        ? selecaoRecorte : {x:0, y:0, w:1, h:1};
+      const sx = Math.round(r.x * fonte.width), sy = Math.round(r.y * fonte.height);
+      const sw = Math.max(1, Math.min(fonte.width - sx, Math.round(r.w * fonte.width)));
+      const sh = Math.max(1, Math.min(fonte.height - sy, Math.round(r.h * fonte.height)));
+      const canvas = document.createElement("canvas");
+      // Mantém boa resolução sem inventar detalhes por ampliação excessiva.
+      const escala = Math.max(1, Math.min(2, 1400 / Math.max(sw, sh)));
+      canvas.width = Math.round(sw * escala);
+      canvas.height = Math.round(sh * escala);
+      canvas.getContext("2d").drawImage(fonte, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    }
+
+    async function tentarDetectorNativo_(canvas) {
+      if (typeof BarcodeDetector === "undefined" || typeof BarcodeDetector.getSupportedFormats !== "function") {
+        throw new Error("Detector nativo indisponível neste navegador.");
+      }
+      const formatos = await BarcodeDetector.getSupportedFormats();
+      if (!formatos.includes("qr_code")) throw new Error("Detector nativo sem suporte a QR Code.");
+      const detector = new BarcodeDetector({ formats: ["qr_code"] });
+      const resultados = await detector.detect(canvas);
+      if (!resultados.length || !resultados[0].rawValue) throw new Error("Detector nativo não reconheceu o código.");
+      return resultados[0].rawValue;
+    }
+
+    async function tentarZxing_(canvas) {
+      await carregarBibliotecaQr_();
+      const blob = await new Promise(function(resolve, reject) {
+        canvas.toBlob(function(resultado) {
+          if (resultado) resolve(resultado);
+          else reject(new Error("Não foi possível preparar a imagem."));
+        }, "image/png");
+      });
+      // Elemento isolado, para não interferir no leitor de vídeo principal.
+      const holder = document.createElement("div");
+      holder.id = "reader-image-" + Date.now();
+      holder.hidden = true;
+      document.body.appendChild(holder);
+      const leitor = new Html5Qrcode(holder.id, {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        useBarCodeDetectorIfSupported: false,
+        verbose: false
+      });
+      try {
+        return await leitor.scanFile(new File([blob], "qr-nota.png", { type: "image/png" }), false);
+      } finally {
+        try { leitor.clear(); } catch (erro) {}
+        holder.remove();
+      }
+    }
+
+    async function tentarLerImagem_(recortar) {
+      const canvas = criarImagemParaLeitura_(recortar);
+      const erros = [];
+      const tentativas = elementos.decoderSelect.value === "zxing"
+        ? [tentarZxing_]
+        : [tentarDetectorNativo_, tentarZxing_];
+      for (const tentativa of tentativas) {
+        try {
+          const texto = await tentativa(canvas);
+          validarLinkNota(texto);
+          return texto;
+        } catch (erro) {
+          erros.push(erro.message || String(erro));
+        }
+      }
+      throw new Error("Nenhum leitor reconheceu um link de NFC-e nesta região. " + erros.join(" | "));
+    }
+
+    async function analisarFoto_(recortar) {
+      elementos.scanCropButton.disabled = true;
+      elementos.scanFullButton.disabled = true;
+      mostrarStatus("Analisando a " + (recortar ? "região selecionada" : "foto inteira") + "...", "info");
+      try {
+        const texto = await tentarLerImagem_(recortar);
+        elementos.cropPanel.hidden = true;
+        fotoCanvasFonte = null;
+        await processarQr_(texto);
+      } catch (erro) {
+        mostrarStatus("Não foi possível reconhecer a notinha: " + erro.message + " Tente marcar somente o QR Code, incluindo as margens brancas.", "warning");
+      } finally {
+        elementos.scanCropButton.disabled = false;
+        elementos.scanFullButton.disabled = false;
+      }
+    }
+
+    elementos.scanCropButton.addEventListener("click", function() {
+      if (!selecaoRecorte || selecaoRecorte.w < .02 || selecaoRecorte.h < .02) {
+        mostrarStatus("Arraste o dedo para marcar o QR Code na fotografia antes de ler o recorte.", "warning");
+        return;
+      }
+      void analisarFoto_(true);
+    });
+    elementos.scanFullButton.addEventListener("click", function() { void analisarFoto_(false); });
+    elementos.closeCropButton.addEventListener("click", function() {
+      elementos.cropPanel.hidden = true;
+      fotoCanvasFonte = null;
+      selecaoRecorte = null;
+      limparStatus();
+    });
+
     elementos.galleryInput.addEventListener("change", async function() {
       const arquivo = elementos.galleryInput.files && elementos.galleryInput.files[0];
       if (!arquivo) return;
       if (!arquivo.type.startsWith("image/")) {
-        mostrarStatus("Selecione uma foto no formato de imagem.", "error");
+        mostrarStatus("Selecione um arquivo de imagem.", "error");
         return;
       }
       elementos.galleryButton.disabled = true;
-      mostrarStatus("Procurando o QR Code na imagem...", "info");
-      let leitorImagem = null;
       try {
         await pararCamera();
-        await carregarBibliotecaQr_();
-        elementos.readerPanel.hidden = false;
-        leitorImagem = new Html5Qrcode("reader", { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
-        const texto = await leitorImagem.scanFile(arquivo, true);
-        try {
-          leitorImagem.clear();
-        } catch (erro) {}
-        leitorImagem = null;
-        elementos.readerPanel.hidden = true;
-        await processarQr_(texto);
+        fotoCanvasFonte = await carregarFotoNoCanvas_(arquivo);
+        selecaoRecorte = null;
+        const limite = 1000;
+        const escala = Math.min(1, limite / Math.max(fotoCanvasFonte.width, fotoCanvasFonte.height));
+        elementos.cropCanvas.width = Math.max(1, Math.round(fotoCanvasFonte.width * escala));
+        elementos.cropCanvas.height = Math.max(1, Math.round(fotoCanvasFonte.height * escala));
+        elementos.cropPanel.hidden = false;
+        desenharFoto_();
+        mostrarStatus("Foto carregada. Marque o QR Code com o dedo e toque em Ler recorte, ou teste a foto inteira.", "info");
       } catch (erro) {
-        const detalhe = erro && erro.message ? erro.message : String(erro || "Falha desconhecida");
-        mostrarStatus("Não consegui reconhecer um QR Code na foto. Tente uma foto mais nítida, com o código inteiro visível. Detalhes: " + detalhe, "warning");
+        mostrarStatus("Não consegui abrir a foto: " + (erro.message || String(erro)), "error");
       } finally {
-        if (leitorImagem) {
-          try { leitorImagem.clear(); } catch (erro) {}
-        }
-        elementos.readerPanel.hidden = true;
         elementos.galleryButton.disabled = false;
         elementos.galleryInput.value = "";
       }
